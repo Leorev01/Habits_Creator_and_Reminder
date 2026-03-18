@@ -27,78 +27,64 @@ namespace HabitTrackerApp
 
             while (true)
             {
+                var menuItems = GetMainMenuItems();
+
                 Console.WriteLine();
                 Console.WriteLine(LocalizationService.GetString("ChooseOption"));
                 Console.WriteLine();
 
-                Console.WriteLine(LocalizationService.GetString("MenuAddHabit"));
-                Console.WriteLine(LocalizationService.GetString("MenuViewHabits"));
-                Console.WriteLine(LocalizationService.GetString("MenuMarkComplete"));
-                Console.WriteLine(LocalizationService.GetString("MenuViewHistory"));
-                Console.WriteLine(LocalizationService.GetString("MenuDeleteHabit"));
-                Console.WriteLine(LocalizationService.GetString("MenuResetHabit"));
-                Console.WriteLine(LocalizationService.GetString("MenuSetReminders"));
-                Console.WriteLine(LocalizationService.GetString("MenuChangeLanguage"));
-                Console.WriteLine($"{LocalizationService.GetString("MenuToggleTheme")} {ThemeService.GetThemeIcon()}");
-                Console.WriteLine($"{LocalizationService.GetString("MenuSyncCalendar")} {(_calendarService.IsInitialized ? "✅" : "🔒")}");
-                Console.WriteLine(LocalizationService.GetString("MenuExit"));
+                for (int i = 0; i < menuItems.Count; i++)
+                {
+                    var item = menuItems[i];
+                    var title = LocalizationService.GetString(item.TitleKey);
+                    var suffix = item.SuffixFactory?.Invoke();
 
+                    if (string.IsNullOrWhiteSpace(suffix))
+                        Console.WriteLine($"{i + 1}. {title}");
+                    else
+                        Console.WriteLine($"{i + 1}. {title} {suffix}");
+                }
+
+                Console.WriteLine();
+                Console.Write(LocalizationService.GetString("EnterMenuOption"));
                 var input = Console.ReadLine();
 
-                switch (input)
+                if (int.TryParse(input, out int choice) && choice >= 1 && choice <= menuItems.Count)
                 {
-                    case "1": 
-                        AddHabit(); 
-                        break;
-                    case "2": 
-                        ViewHabits(); 
-                        break;
-                    case "3": 
-                        MarkHabitComplete(); 
-                        break;
-                    case "4": 
-                        ViewHabitHistory(); 
-                        break;
-                    case "5": 
-                        DeleteHabit(); 
-                        break;
-                    case "6":
-                        ResetHabit();
-                        break;
-                    case "7": 
-                        SetEmailReminders(); 
-                        break;
-                    case "8": 
-                        await ChangeLanguageAsync(); 
-                        break;
-                    case "9": 
-                        ThemeService.ToggleTheme();
-                        break;
-                    case "10": 
-                        await SyncToGoogleCalendar();
-                        break;
-                    case "11": 
-                        await ExitApplication();
+                    var selectedItem = menuItems[choice - 1];
+                    await selectedItem.Action();
+
+                    if (selectedItem.IsExit)
                         return;
-                    default:
-                        Console.WriteLine(LocalizationService.GetString("InvalidOption"));
-                        break;
+                }
+                else
+                {
+                    Console.WriteLine(LocalizationService.GetString("InvalidOption"));
                 }
             }
         }
 
         static async Task ChangeLanguageAsync()
         {
-            var languages = LanguageService.GetLanguages();
+            Console.WriteLine();
+            Console.WriteLine(LocalizationService.GetString("MenuChangeLanguage") + ":");
+            Console.WriteLine();
 
-            Console.WriteLine();
-            Console.WriteLine(LocalizationService.GetString("MenuChangeLanguage").Replace("7.", "").Trim() + ":");
-            Console.WriteLine();
+            var languages = LanguageService.GetLanguages();
+            var auditResults = await LocalizationAuditService.AuditAllAsync();
+            var auditMap = auditResults.ToDictionary(x => x.LanguageCode, x => x);
 
             int i = 1;
             foreach (var lang in languages)
             {
-                Console.WriteLine($"{i}. {lang.Value} ({lang.Key})");
+                string status = string.Empty;
+
+                if (lang.Key != "en" && auditMap.TryGetValue(lang.Key, out var audit) && audit.NeedsUpdate)
+                {
+                    status = $"⚠️ [needs update: {audit.MissingCount + audit.EmptyCount}]";
+                }
+
+                Console.WriteLine($"{i}. {lang.Value} ({lang.Key}){status}");
                 i++;
             }
             Console.WriteLine();
@@ -106,7 +92,7 @@ namespace HabitTrackerApp
             Console.WriteLine();
             Console.Write(LocalizationService.GetString("SelectLanguage"));
             var input = Console.ReadLine();
-            
+
             if (int.TryParse(input, out int choice) && choice >= 1 && choice <= languages.Count)
             {
                 string selectedCode = languages.ElementAt(choice - 1).Key;
@@ -125,7 +111,7 @@ namespace HabitTrackerApp
             Console.WriteLine();
             Console.Write(LocalizationService.GetString("EnterHabitName"));
             var name = Console.ReadLine()?.Trim();
-            
+
             if (string.IsNullOrEmpty(name))
             {
                 Console.WriteLine(LocalizationService.GetString("HabitNameRequired"));
@@ -172,20 +158,20 @@ namespace HabitTrackerApp
         static void MarkHabitComplete()
         {
             ViewHabits();
-            
+
             if (habits.Count == 0)
                 return;
 
             Console.WriteLine();
             Console.Write(LocalizationService.GetString("SelectHabitComplete"));
             var input = Console.ReadLine();
-            
+
             if (int.TryParse(input, out int index) && index >= 1 && index <= habits.Count)
             {
                 var habit = habits[index - 1];
                 habit.MarkComplete();
                 Storage.Save(habits);
-                Console.WriteLine(string.Format(LocalizationService.GetString("HabitMarkedComplete"), habit.Name, "today"));
+                Console.WriteLine(string.Format(LocalizationService.GetString("HabitMarkedComplete"), habit.Name, LocalizationService.GetString("Today")));
             }
             else
             {
@@ -196,14 +182,14 @@ namespace HabitTrackerApp
         static void ViewHabitHistory()
         {
             ViewHabits();
-            
+
             if (habits.Count == 0)
                 return;
 
             Console.WriteLine();
             Console.Write(LocalizationService.GetString("SelectHabitHistory"));
             var input = Console.ReadLine();
-            
+
             if (int.TryParse(input, out int index) && index >= 1 && index <= habits.Count)
             {
                 Console.WriteLine();
@@ -218,21 +204,21 @@ namespace HabitTrackerApp
         static void DeleteHabit()
         {
             ViewHabits();
-            
+
             if (habits.Count == 0)
                 return;
 
             Console.WriteLine();
             Console.Write(LocalizationService.GetString("SelectHabitDelete"));
             var input = Console.ReadLine();
-            
+
             if (int.TryParse(input, out int index) && index >= 1 && index <= habits.Count)
             {
                 var habitName = habits[index - 1].Name;
-                
+
                 Console.Write(string.Format(LocalizationService.GetString("ConfirmDelete"), habitName));
                 var confirmation = Console.ReadLine()?.ToLower();
-                
+
                 if (confirmation == "y" || confirmation == "yes" || confirmation == LocalizationService.GetString("Yes").ToLower())
                 {
                     habits.RemoveAt(index - 1);
@@ -270,7 +256,7 @@ namespace HabitTrackerApp
 
                 if (confirmation == "y" || confirmation == "yes" || confirmation == LocalizationService.GetString("Yes").ToLower())
                 {
-                    habits[index -1].ResetCurrentStreak();
+                    habits[index - 1].ResetCurrentStreak();
                     Console.WriteLine(string.Format(LocalizationService.GetString("ResetedHabit"), habitName));
                     Storage.Save(habits);
                 }
@@ -291,7 +277,7 @@ namespace HabitTrackerApp
             Console.WriteLine(LocalizationService.GetString("ReminderTimePrompt"));
             Console.Write(LocalizationService.GetString("EnterTime"));
             var input = Console.ReadLine();
-            
+
             if (!TimeSpan.TryParse(input, out TimeSpan reminderTime))
             {
                 Console.WriteLine(LocalizationService.GetString("InvalidTimeFormat"));
@@ -312,7 +298,7 @@ namespace HabitTrackerApp
         static async Task SyncToGoogleCalendar()
         {
             Console.WriteLine();
-            
+
             if (habits.Count == 0)
             {
                 Console.WriteLine(LocalizationService.GetString("NoHabitsToSync"));
@@ -352,7 +338,7 @@ namespace HabitTrackerApp
 
             Console.WriteLine();
             Console.WriteLine(string.Format(LocalizationService.GetString("SyncingToCalendar"), targetDate.ToString("yyyy-MM-dd")));
-            
+
             int successCount = 0;
             int failureCount = 0;
 
@@ -360,7 +346,7 @@ namespace HabitTrackerApp
             for (int i = 0; i < habits.Count; i++)
             {
                 Console.Write($"\r{LocalizationService.GetString("SyncingHabit")} {i + 1}/{habits.Count}: {habits[i].Name}...");
-                
+
                 try
                 {
                     bool success = await _calendarService.CreateHabitEventAsync(habits[i], targetDate);
@@ -379,7 +365,7 @@ namespace HabitTrackerApp
                     failureCount++;
                     Console.WriteLine($"\n❌ {LocalizationService.GetString("SyncFailedFor")} {habits[i].Name}: {ex.Message}");
                 }
-                
+
                 // Small delay to prevent API rate limiting
                 await Task.Delay(500);
             }
@@ -389,7 +375,7 @@ namespace HabitTrackerApp
             {
                 Console.WriteLine($"✅ {string.Format(LocalizationService.GetString("CalendarSyncComplete"), successCount, targetDate.ToString("yyyy-MM-dd"))}");
             }
-            
+
             if (failureCount > 0)
             {
                 Console.WriteLine($"⚠️ {string.Format(LocalizationService.GetString("CalendarSyncPartialFailure"), failureCount)}");
@@ -400,7 +386,7 @@ namespace HabitTrackerApp
         {
             Console.WriteLine();
             Console.WriteLine(LocalizationService.GetString("SavingData"));
-            
+
             try
             {
                 Storage.Save(habits);
@@ -411,9 +397,77 @@ namespace HabitTrackerApp
             {
                 Console.WriteLine($"⚠️ {LocalizationService.GetString("SaveError")}: {ex.Message}");
             }
-            
+
             Console.WriteLine(LocalizationService.GetString("GoodbyeMessage"));
             await Task.Delay(1000); // Brief pause for user to see the message
+        }
+
+        private static List<MenuItem> GetMainMenuItems()
+        {
+            return new List<MenuItem>
+    {
+        new MenuItem("MenuAddHabit", () =>
+        {
+            AddHabit();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuViewHabits", () =>
+        {
+            ViewHabits();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuMarkComplete", () =>
+        {
+            MarkHabitComplete();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuViewHistory", () =>
+        {
+            ViewHabitHistory();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuDeleteHabit", () =>
+        {
+            DeleteHabit();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuResetHabit", () =>
+        {
+            ResetHabit();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuSetReminders", () =>
+        {
+            SetEmailReminders();
+            return Task.CompletedTask;
+        }),
+
+        new MenuItem("MenuChangeLanguage", () => ChangeLanguageAsync()),
+
+        new MenuItem(
+            "MenuToggleTheme",
+            () =>
+            {
+                ThemeService.ToggleTheme();
+                return Task.CompletedTask;
+            },
+            () => ThemeService.GetThemeIcon()
+        ),
+
+        new MenuItem(
+            "MenuSyncCalendar",
+            () => SyncToGoogleCalendar(),
+            () => _calendarService.IsInitialized ? "✅" : "🔒"
+        ),
+
+        new MenuItem("MenuExit", () => ExitApplication(), isExit: true)
+    };
         }
     }
 }
